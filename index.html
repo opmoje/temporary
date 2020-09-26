@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8"/>
+    <title>M4S</title>
+    <script src="https://api-maps.yandex.ru/2.1/?apikey=36f36819-8f02-439f-bf00-f9676151c068&lang=ru_RU&load=package.full"
+            type="text/javascript"></script>
+    <script
+            src="https://code.jquery.com/jquery-3.5.1.min.js"
+            integrity="sha256-9/aliU8dGd2tb6OSsuzixeV4y/faTqgFtohetphbbj0="
+            crossorigin="anonymous"></script>
+    <style>
+        body {
+            padding: 0;
+            margin: 0;
+            font-family: Tahoma, serif;
+            font-size: 14px;
+        }
+
+        #wrap {
+            position: relative;
+        }
+
+        #toolbar {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            z-index: 999;
+            box-sizing: border-box;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            padding: 15px;
+            width: 200px;
+        }
+
+        #map {
+            width: 100%;
+            height: 100vh;
+        }
+
+        .ymap-container {
+            height: 100%;
+        }
+
+        .points {
+            margin-top: 15px;
+        }
+
+        .points .point {
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+<div id="wrap">
+    <div id="toolbar">
+        <div>
+            <div>
+                Термические точки в области видимости:
+            </div>
+            <div id="pointsList" class="points"></div>
+        </div>
+    </div>
+    <div id="map"></div>
+</div>
+
+<script type="text/javascript">
+    var myMap;
+    var geoObjectsQuery;
+    var boundsChangeTimeout = null;
+    var pointsProps = []; // маппинг объектов карты к их кастомным параметрам
+
+    ymaps.ready().then(function () {
+        myMap = new ymaps.Map("map", {
+            center: [56.7428, 80.4355],
+            zoom: 4,
+            type: 'yandex#satellite',
+            controls: ['zoomControl']
+        });
+
+        var jsonUrl = '/data-points.json';
+
+        $.getJSON(jsonUrl, function (jsonArr) {
+            if (!jsonArr.length) {
+                return;
+            }
+
+            var myGeoObjects = jsonArr.map(item => {
+                var centerOfLat = (item.ya + item.yi) / 2,
+                    centerOfLon = (item.xa + item.xi) / 2;
+
+                var iconName = item.fire_status === 'BRN' ? 'c5.png' : 'loc.png';
+
+                var geoObject = new ymaps.GeoObject({
+                    geometry: {
+                        type: "Point",
+                        coordinates: [
+                            centerOfLat,
+                            centerOfLon
+                        ],
+                    },
+                }, {
+                    iconLayout: 'default#image',
+                    iconImageHref: 'assets/icons/' + iconName,
+                    iconImageSize: [22, 22],
+                    iconImageOffset: [-11, -11],
+                    custom: {
+                        test: 'passed',
+                    }
+                });
+
+                pointsProps[]
+
+                //collection.add(geoObject);
+                return geoObject;
+            });
+
+            var clusterIcons = [
+                {
+                    href: 'assets/icons/c5.png',
+                    size: [40, 40],
+                    // Отступ, чтобы центр картинки совпадал с центром кластера.
+                    offset: [-20, -20]
+                },
+                {
+                    href: 'assets/icons/c5.png',
+                    size: [55, 55],
+                    offset: [-22.5, -22.5]
+                },
+                {
+                    href: 'assets/icons/c5.png',
+                    size: [65, 65],
+                    offset: [-32.5, -32.5]
+                },
+                {
+                    href: 'assets/icons/c5.png',
+                    size: [70, 70],
+                    offset: [-35, -35]
+                },
+                {
+                    href: 'assets/icons/c5.png',
+                    size: [75, 75],
+                    offset: [-37.5, -37.5]
+                }
+            ];
+
+            // Создадим кластеризатор после получения и добавления точек
+            var clusterer = new ymaps.Clusterer({
+                preset: 'islands#invertedDarkGreenClusterIcons',
+                clusterIcons: clusterIcons,
+                clusterNumbers: [5, 10, 20, 50, 100],
+                clusterIconContentLayout: null,
+                clusterDisableClickZoom: false,
+                clusterBalloonContentLayoutWidth: 800,
+                clusterBalloonLeftColumnWidth: 160
+            });
+            clusterer.createCluster = function (center, geoObjects) {
+                // Создаем метку-кластер с помощью стандартной реализации метода.
+                var clusterPlacemark = ymaps.Clusterer.prototype.createCluster.call(this, center, geoObjects),
+                    geoObjectsLength = clusterPlacemark.getGeoObjects().length,
+                    hintContent = 'Точек: ' + geoObjectsLength;
+
+                clusterPlacemark.properties.set('hintContent', hintContent);
+                return clusterPlacemark;
+            };
+
+            clusterer.add(myGeoObjects);
+            myMap.geoObjects.add(clusterer);
+
+            myMap.setBounds(clusterer.getBounds(), {
+                checkZoomRange: true
+            });
+
+            // Создаем geoQuery для запросов к гео-объектам.
+            geoObjectsQuery = ymaps.geoQuery(myGeoObjects);
+        })
+
+
+        // Обработка события, возникающего при щелчке
+        // левой кнопкой мыши в любой точке карты.
+        // При возникновении такого события откроем балун.
+        myMap.events.add('click', function (e) {
+            var coords = e.get('coords');
+            console.log(coords[0].toPrecision(6), coords[1].toPrecision(6))
+        });
+
+        myMap.events.add('boundschange', function () {
+            // После каждого сдвига карты будем смотреть, какие объекты попадают в видимую область.
+            refreshVisibleList();
+        });
+
+        // сразу смотрим, какие объекты попадают на карту
+        refreshVisibleList();
+    });
+
+    function refreshVisibleList() {
+        // С помощью geoQuery получаем список объектов на карте.
+        var visibleGeoObjects = geoObjectsQuery.searchIntersect(myMap);
+        //console.log(visibleGeoObjects);
+
+        // Собираем данные из видимых гео-объектов.
+        var visibleObjectsHtml = [];
+        visibleGeoObjects.each(function (obj) {
+            console.log(obj);
+            var iconContent = obj.properties.get('id');
+            console.log(iconContent);
+            visibleObjectsHtml.push('<div>Point id</div>');
+        });
+
+        // Обновляем список.
+        var visibleElement = document.getElementById('pointsList');
+        visibleElement.innerHTML = visibleObjectsHtml.join('');
+    }
+
+    function convertLandCategoryToHumanTitle(category) {
+        if (category === '003001000000') return 'Земли сельскохозяйственного назначения';
+        else if (category === '003002000000') return 'Земли населённых пунктов';
+        else if (category === '003003000000') return 'Земли промышленности, энергетики, транспорта, связи, ' +
+            'радиовещания, телевидения, информатики, земли для обеспечения космической деятельности, ' +
+            'земли обороны, безопасности и земли иного специального назначения';
+        else if (category === '003004000000') return 'Земли особо охраняемых территорий и объектов';
+        else if (category === '003005000000') return 'Земли лесного фонда';
+        else if (category === '003006000000') return 'Земли водного фонда';
+        else if (category === '003007000000') return 'Земли запаса';
+        else if (category === '003008000000') return 'Категория не установлена';
+        else return 'Не определена';
+    }
+</script>
+
+</body>
+</html>
