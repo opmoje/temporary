@@ -66,6 +66,7 @@
 
 <script type="text/javascript">
     var myMap;
+    var objectManager;
     var geoObjectsQuery;
     var boundsChangeTimeout = null;
     var pointsProps = []; // маппинг объектов карты к их кастомным параметрам
@@ -78,6 +79,49 @@
             controls: ['zoomControl']
         });
 
+        var clusterIcons = [
+            {
+                href: 'assets/icons/c5.png',
+                size: [40, 40],
+                // Отступ, чтобы центр картинки совпадал с центром кластера.
+                offset: [-20, -20]
+            },
+            {
+                href: 'assets/icons/c5.png',
+                size: [55, 55],
+                offset: [-22.5, -22.5]
+            },
+            {
+                href: 'assets/icons/c5.png',
+                size: [65, 65],
+                offset: [-32.5, -32.5]
+            },
+            {
+                href: 'assets/icons/c5.png',
+                size: [70, 70],
+                offset: [-35, -35]
+            },
+            {
+                href: 'assets/icons/c5.png',
+                size: [75, 75],
+                offset: [-37.5, -37.5]
+            }
+        ];
+
+        objectManager = new ymaps.ObjectManager({
+            clusterize: true,
+            gridSize: 30,
+            geoObjectOpenBalloonOnClick: true,
+            clusterHasHint: true,
+            clusterBalloonContentLayout: "cluster#balloonCarousel",
+            balloonContentLayoutHeight: 140,
+            balloonContentLayoutWidth: 240,
+            clusterIcons: clusterIcons,
+            clusterIconContentLayout: null
+        });
+
+        //objectManager.objects.options.set('preset', 'islands#grayIcon');
+
         var jsonUrl = '/data-points.json';
 
         $.getJSON(jsonUrl, function (jsonArr) {
@@ -85,13 +129,16 @@
                 return;
             }
 
-            var myGeoObjects = jsonArr.map(item => {
+            var currentId = 0;
+
+            /*var myGeoObjects = jsonArr.map(item => {
                 var centerOfLat = (item.ya + item.yi) / 2,
                     centerOfLon = (item.xa + item.xi) / 2;
 
                 var iconName = item.fire_status === 'BRN' ? 'c5.png' : 'loc.png';
 
                 var geoObject = new ymaps.GeoObject({
+                    id: currentId++,
                     geometry: {
                         type: "Point",
                         coordinates: [
@@ -109,70 +156,54 @@
                     }
                 });
 
-                pointsProps[]
+                //objectManager.add(geoObject);
 
                 //collection.add(geoObject);
                 return geoObject;
-            });
+            });*/
 
-            var clusterIcons = [
-                {
-                    href: 'assets/icons/c5.png',
-                    size: [40, 40],
-                    // Отступ, чтобы центр картинки совпадал с центром кластера.
-                    offset: [-20, -20]
-                },
-                {
-                    href: 'assets/icons/c5.png',
-                    size: [55, 55],
-                    offset: [-22.5, -22.5]
-                },
-                {
-                    href: 'assets/icons/c5.png',
-                    size: [65, 65],
-                    offset: [-32.5, -32.5]
-                },
-                {
-                    href: 'assets/icons/c5.png',
-                    size: [70, 70],
-                    offset: [-35, -35]
-                },
-                {
-                    href: 'assets/icons/c5.png',
-                    size: [75, 75],
-                    offset: [-37.5, -37.5]
-                }
-            ];
+            var myGeoObjects = [];
+            for (var k in jsonArr) {
+                var item = jsonArr[k],
+                    centerOfLat = (item.ya + item.yi) / 2,
+                    centerOfLon = (item.xa + item.xi) / 2;
 
-            // Создадим кластеризатор после получения и добавления точек
-            var clusterer = new ymaps.Clusterer({
-                preset: 'islands#invertedDarkGreenClusterIcons',
-                clusterIcons: clusterIcons,
-                clusterNumbers: [5, 10, 20, 50, 100],
-                clusterIconContentLayout: null,
-                clusterDisableClickZoom: false,
-                clusterBalloonContentLayoutWidth: 800,
-                clusterBalloonLeftColumnWidth: 160
-            });
-            clusterer.createCluster = function (center, geoObjects) {
-                // Создаем метку-кластер с помощью стандартной реализации метода.
-                var clusterPlacemark = ymaps.Clusterer.prototype.createCluster.call(this, center, geoObjects),
-                    geoObjectsLength = clusterPlacemark.getGeoObjects().length,
-                    hintContent = 'Точек: ' + geoObjectsLength;
+                var iconName = item.fire_status === 'BRN' ? 'c5.png' : 'loc.png';
 
-                clusterPlacemark.properties.set('hintContent', hintContent);
-                return clusterPlacemark;
-            };
+                myGeoObjects.push({
+                    type: 'Feature',
+                    id: currentId++,
+                    geometry: {
+                        type: 'Point',
+                        coordinates: [
+                            centerOfLat,
+                            centerOfLon
+                        ],
+                    },
+                    options: {
+                        iconLayout: 'default#image',
+                        iconImageHref: 'assets/icons/' + iconName,
+                        iconImageSize: [22, 22],
+                        iconImageOffset: [-11, -11],
+                        custom: {
+                            test: 'passed',
+                        }
+                    }
+                });
 
-            clusterer.add(myGeoObjects);
-            myMap.geoObjects.add(clusterer);
+                //console.log(k, jsonArr[k]);
+            }
+            geoObjectsQuery = ymaps.geoQuery(myGeoObjects);
+            objectManager.add(myGeoObjects);
 
-            myMap.setBounds(clusterer.getBounds(), {
+            //objectManager.add(myGeoObjects);
+            myMap.geoObjects.add(objectManager);
+
+            /*myMap.setBounds(objectManager.getBounds(), {
                 checkZoomRange: true
-            });
+            });*/
 
             // Создаем geoQuery для запросов к гео-объектам.
-            geoObjectsQuery = ymaps.geoQuery(myGeoObjects);
         })
 
 
@@ -190,21 +221,24 @@
         });
 
         // сразу смотрим, какие объекты попадают на карту
-        refreshVisibleList();
+        setTimeout(function () {
+            refreshVisibleList();
+        }, 1000)
     });
 
     function refreshVisibleList() {
-        // С помощью geoQuery получаем список объектов на карте.
-        var visibleGeoObjects = geoObjectsQuery.searchIntersect(myMap);
-        //console.log(visibleGeoObjects);
+        var objects = objectManager.objects.getAll(),
+            visibleObjectsHtml = [];
 
-        // Собираем данные из видимых гео-объектов.
-        var visibleObjectsHtml = [];
-        visibleGeoObjects.each(function (obj) {
-            console.log(obj);
-            var iconContent = obj.properties.get('id');
-            console.log(iconContent);
-            visibleObjectsHtml.push('<div>Point id</div>');
+        objects.forEach(function (object) {
+            // Получим данные о состоянии объекта внутри кластера.
+            var objectState = objectManager.getObjectState(object.id);
+
+            // Проверяем, находится ли объект в видимой области карты.
+            if (objectState.found && objectState.isShown) {
+                visibleObjectsHtml.push('<div>Point id</div>');
+                console.log(object);
+            }
         });
 
         // Обновляем список.
